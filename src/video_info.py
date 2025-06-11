@@ -1,11 +1,10 @@
 import os
 import re
-import subprocess
 import tempfile
 from bs4 import BeautifulSoup
 import requests
 from langdetect import detect, DetectorFactory
-
+from yt_dlp import YoutubeDL
 
 class GetVideo:
     @staticmethod
@@ -37,49 +36,39 @@ class GetVideo:
     @staticmethod
     def _download_subtitles(video_url: str, lang: str = 'en') -> str:
         with tempfile.TemporaryDirectory() as tmpdir:
-            output_path = os.path.join(tmpdir, '%(id)s.%(ext)s')
-            print(f"[yt-dlp] Diretório temporário: {tmpdir}")
+            ydl_opts = {
+                'writesubtitles': True,
+                'writeautomaticsub': True,
+                'subtitleslangs': [lang],
+                'skip_download': True,
+                'subtitlesformat': 'vtt',
+                'outtmpl': os.path.join(tmpdir, '%(id)s.%(ext)s'),
+                'quiet': True,
+                'paths': {'home': tmpdir}
+            }
+
             try:
-                result = subprocess.run([
-                    'yt-dlp',
-                    '--write-auto-sub',
-                    f'--sub-lang={lang}',
-                    '--skip-download',
-                    '--convert-subs', 'vtt',
-                    '-o', output_path,
-                    '--cache-dir', tmpdir,
-                    '--no-warnings',
-                    video_url
-                ], capture_output=True, text=True)
+                with YoutubeDL(ydl_opts) as ydl:
+                    info_dict = ydl.extract_info(video_url, download=True)
+                    video_id = info_dict.get("id", None)
 
-                print("[yt-dlp] STDOUT:\n", result.stdout)
-                print("[yt-dlp] STDERR:\n", result.stderr)
-
-                if result.returncode != 0:
-                    print("[ERRO] yt-dlp falhou:", result.stderr)
+                if not video_id:
+                    print("❌ ID do vídeo não encontrado.")
                     return None
 
-                print("[yt-dlp] Ficheiros encontrados:", os.listdir(tmpdir))
-
-                # Procurar ficheiro VTT
-                for fname in os.listdir(tmpdir):
-                    if fname.endswith(".vtt"):
-                        vtt_path = os.path.join(tmpdir, fname)
-                        print(f"[yt-dlp] Ficheiro VTT encontrado: {fname}")
-                        with open(vtt_path, 'r', encoding='utf-8') as f:
-                            return f.read()
-
-                print("[ERRO] Ficheiro VTT não encontrado.")
-                return None
+                vtt_file = os.path.join(tmpdir, f"{video_id}.{lang}.vtt")
+                if os.path.exists(vtt_file):
+                    with open(vtt_file, 'r', encoding='utf-8') as f:
+                        return f.read()
+                else:
+                    print("❌ Ficheiro VTT não encontrado.")
+                    return None
             except Exception as e:
-                print(f"[ERRO] Exceção ao usar yt-dlp: {e}")
+                print(f"❌ Erro ao usar yt_dlp: {e}")
                 return None
 
     @staticmethod
     def limpar_vtt(vtt_text: str) -> str:
-        """
-        Limpa o texto VTT removendo timestamps, linhas de formatação e duplicações consecutivas.
-        """
         linhas = vtt_text.splitlines()
         texto_sem_ruido = []
         for linha in linhas:
