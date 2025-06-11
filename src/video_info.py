@@ -37,6 +37,8 @@ class GetVideo:
     def _download_subtitles(video_url: str, lang: str = 'en') -> str:
         with tempfile.TemporaryDirectory() as tmpdir:
             output_path = os.path.join(tmpdir, '%(id)s.%(ext)s')
+            print(f"Temp dir: {tmpdir}")
+            print("Ficheiros antes:", os.listdir(tmpdir))
             try:
                 result = subprocess.run([
                     'yt-dlp',
@@ -45,12 +47,18 @@ class GetVideo:
                     '--skip-download',
                     '--convert-subs', 'vtt',
                     '-o', output_path,
+                    '--cache-dir', tmpdir,
                     video_url
                 ], capture_output=True, text=True)
+
+                print("yt-dlp stdout:", result.stdout)
+                print("yt-dlp stderr:", result.stderr)
 
                 if result.returncode != 0:
                     print("yt-dlp erro:", result.stderr)
                     return None
+
+                print("Ficheiros depois:", os.listdir(tmpdir))
 
                 video_id = GetVideo.extract_video_id(video_url)
                 vtt_file = os.path.join(tmpdir, f"{video_id}.{lang}.vtt")
@@ -63,6 +71,7 @@ class GetVideo:
             except Exception as e:
                 print(f"Erro ao usar yt-dlp: {e}")
                 return None
+
 
     @staticmethod
     def limpar_vtt(vtt_text: str) -> str:
