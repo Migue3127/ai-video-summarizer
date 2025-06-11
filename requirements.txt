@@ -6,3 +6,4 @@ beautifulsoup4==4.12.3
 requests==2.32.3
 langdetect==1.0.9
 gTTS==2.4.0
+yt-dlp==2025.6.9
