@@ -1,135 +1,102 @@
-import os
-import re
-import tempfile
+from youtube_transcript_api import YouTubeTranscriptApi 
 from bs4 import BeautifulSoup
 import requests
+import re
 from langdetect import detect, DetectorFactory
-from yt_dlp import YoutubeDL
+from langdetect.lang_detect_exception import LangDetectException
 
 class GetVideo:
     @staticmethod
     def extract_video_id(youtube_url: str) -> str:
+        """Extracts the video ID from a YouTube video link."""
         patterns = [
-            r"(?:v=|\/)([0-9A-Za-z_-]{11}).*",
-            r"(?:embed\/)([0-9A-Za-z_-]{11})",
-            r"(?:youtu\.be\/)([0-9A-Za-z_-]{11})",
-            r"(?:shorts\/)([0-9A-Za-z_-]{11})",
-            r"^([0-9A-Za-z_-]{11})$"
+            r"(?:v=|\/)([0-9A-Za-z_-]{11}).*",      # URLs normais e partilhados
+            r"(?:embed\/)([0-9A-Za-z_-]{11})",      # URLs embutidos
+            r"(?:youtu\.be\/)([0-9A-Za-z_-]{11})",  # URLs curtos
+            r"(?:shorts\/)([0-9A-Za-z_-]{11})",     # YouTube Shorts
+            r"^([0-9A-Za-z_-]{11})$"                # Apenas o ID
         ]
+    
         youtube_url = youtube_url.strip()
+
         for pattern in patterns:
             match = re.search(pattern, youtube_url)
             if match:
                 return match.group(1)
+    
         raise ValueError("Não foi possível extrair o ID do vídeo do URL")
-
+        
     @staticmethod
     def title(link):
+        """Obter o titulo do video."""
+        r = requests.get(link) 
+        s = BeautifulSoup(r.text, "html.parser") 
         try:
-            r = requests.get(link)
-            s = BeautifulSoup(r.text, "html.parser")
             title = s.find("meta", itemprop="name")["content"]
             return title
-        except Exception:
-            return "⚠️ Título não disponível ou link inválido."
-
+        except TypeError:
+            title = "⚠️ Parece haver um problema com o link do vídeo do YouTube fornecido. Por favor, verifique o link e tente novamente."
+            return title
+        
     @staticmethod
-    def _download_subtitles(video_url: str, lang: str = 'en') -> str:
-        with tempfile.TemporaryDirectory() as tmpdir:
-            ydl_opts = {
-                'writesubtitles': True,
-                'writeautomaticsub': True,
-                'subtitleslangs': [lang],
-                'skip_download': True,
-                'subtitlesformat': 'vtt',
-                'outtmpl': os.path.join(tmpdir, '%(id)s.%(ext)s'),
-                'quiet': True,
-                'paths': {'home': tmpdir}
-            }
-
+    def transcript(link, fallback_language='pt'):
+        """Obtém transcrição com fallback inteligente"""
+        video_id = GetVideo.extract_video_id(link)
+        try:
+            # Primeiro tenta no idioma padrão do vídeo
+            transcript = YouTubeTranscriptApi.get_transcript(
+                video_id,
+                languages=[fallback_language, 'en']  # Tenta primeiro no fallback, depois inglês
+            )
+            return " ".join(i['text'] for i in transcript)
+        except:
             try:
-                with YoutubeDL(ydl_opts) as ydl:
-                    info_dict = ydl.extract_info(video_url, download=True)
-                    video_id = info_dict.get("id", None)
-
-                if not video_id:
-                    print("❌ ID do vídeo não encontrado.")
-                    return None
-
-                vtt_file = os.path.join(tmpdir, f"{video_id}.{lang}.vtt")
-                if os.path.exists(vtt_file):
-                    with open(vtt_file, 'r', encoding='utf-8') as f:
-                        return f.read()
-                else:
-                    print("❌ Ficheiro VTT não encontrado.")
-                    return None
+                # Se falhar, tenta qualquer transcrição disponível
+                transcript = YouTubeTranscriptApi.get_transcript(video_id)
+                return " ".join(i['text'] for i in transcript)
             except Exception as e:
-                print(f"❌ Erro ao usar yt_dlp: {e}")
+                print(f"Erro detalhado: {str(e)}")
                 return None
 
     @staticmethod
-    def limpar_vtt(vtt_text: str) -> str:
-        linhas = vtt_text.splitlines()
-        texto_sem_ruido = []
-        for linha in linhas:
-            linha = linha.strip()
-            if (
-                not linha or
-                linha.startswith(('WEBVTT', 'Kind:', 'Language:', 'NOTE')) or
-                re.match(r"\d{2}:\d{2}:\d{2}\.\d{3} -->", linha)
-            ):
-                continue
-            linha = re.sub(r'</?c>', '', linha)
-            linha = re.sub(r'align:\S+ position:\S+', '', linha)
-            linha = re.sub(r'<\d{2}:\d{2}:\d{2}\.\d{3}>', '', linha)
-            linha = linha.strip()
-            if linha:
-                texto_sem_ruido.append(linha)
-
-        texto_final = []
-        anterior = ""
-        for linha in texto_sem_ruido:
-            if linha != anterior:
-                texto_final.append(linha)
-                anterior = linha
-
-        return ' '.join(texto_final)
-
-    @staticmethod
-    def transcript(link, fallback_language='en'):
-        raw_vtt = GetVideo._download_subtitles(link, fallback_language)
-        if not raw_vtt:
-            return None
-        return GetVideo.limpar_vtt(raw_vtt)
-
-    @staticmethod
-    def transcript_time(link, fallback_language='en'):
-        raw_vtt = GetVideo._download_subtitles(link, fallback_language)
-        if not raw_vtt:
-            return None
-
-        lines = raw_vtt.splitlines()
-        transcript = []
-        time = None
-        for line in lines:
-            if re.match(r"\d{2}:\d{2}:\d{2}\.\d{3} -->", line):
-                time = line.split(' -->')[0].split('.')[0]
-            elif line.strip() and time:
-                transcript.append(f'{line.strip()} "time:{time}"')
-                time = None
-        return ' '.join(transcript)
-
+    def transcript_time(link):
+        """Obter a transcrição do video do Youtube com as timestamps."""
+        video_id = GetVideo.extract_video_id(link)
+        try:
+            transcript_dict = YouTubeTranscriptApi.get_transcript(video_id)
+            final_transcript = ""
+            for i in transcript_dict:
+                timevar = round(float(i["start"]))
+                hours = int(timevar // 3600)
+                timevar %= 3600
+                minutes = int(timevar // 60)
+                timevar %= 60
+                timevex = f"{hours:02d}:{minutes:02d}:{timevar:02d}"
+                final_transcript += f'{i["text"]} "time:{timevex}" '
+            return final_transcript
+        except Exception as e:
+            print(e)
+            return video_id
+        
     @staticmethod
     def detect_language(text):
+        """Detecção melhorada para múltiplos idiomas"""
         if not text:
-            return 'en'
+            return 'en'  # Default para inglês
+        
         try:
             DetectorFactory.seed = 0
             lang = detect(text)
+            # Mapeamento simplificado
             return {
-                'pt': 'pt', 'en': 'en', 'es': 'es',
-                'fr': 'fr', 'de': 'de', 'it': 'it',
-                'nl': 'nl', 'ru': 'ru'
+                'pt': 'pt',
+                'en': 'en',
+                'es': 'es',
+                'fr': 'fr',
+                'de': 'de',
+                'it': 'it',
+                'nl': 'nl',
+                'ru': 'ru'
             }.get(lang, 'en')
         except:
             return 'en'
