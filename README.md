@@ -105,7 +105,7 @@ A aplicação utiliza SQLite3 com criação automática da base de dados:
    - Confirmar instalação das dependências de áudio
 
 4. Histórico
-   - Após gerar um resumo, a parte do histórico só atualiza ao realizar alguma ação na barra lateral, como trocar o idioma, (nem que seja clicar nos mesmo)
+   - Após gerar um resumo, a parte do histórico só atualiza ao realizar alguma ação na barra lateral, como trocar o idioma, (nem que seja clicar no mesmo)
 
 5. Erros de transcrição disponível
    - introduzir o link do vídeo de novo ou clicar gerar resumo até dar, (isto pode acontecer porque o YoutubeTranscriptApi não buscou corretamente a transcrição)
